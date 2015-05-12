@@ -9,7 +9,8 @@ g.tick text {
 }
 path {  stroke: #fff; }
 path:hover {  opacity:0.9; }
-rect:hover {  fill:blue; }
+rect.hist-rect:hover {  fill:blue; }
+rect.cb-rect:hover {  fill:red; }
 .axis {  font: 11px sans-serif;
   text-transform: uppercase;
     text-align: left;
@@ -53,7 +54,8 @@ rect:hover {  fill:blue; }
 function dashboard(id, fData){
     // store color for the bar charts
     var barColor = 'steelblue';
-    
+    var p4 = false;
+    var p5 = false;
     // create a function that will retrieve the color of the different properties of each data type
     function segColor(c){ return {dropped:"#807dba", failed:"#e08214",success:"#41ab5d"}[c]; }
 
@@ -63,12 +65,54 @@ function dashboard(id, fData){
       d.total=d.freq.dropped+d.freq.failed+d.freq.success;
     });
 
-    // function to handle histogram.
+
+    /**************************************************************************/
+    // BEING CLUSTER BOX
+    function clusterBox(cB) {
+      var cBsvg = d3.select(id).append("svg")
+        .attr("width", 400)
+        .attr("height", 400);
+
+      // create the rectangles
+      var buttons = cBsvg.selectAll(".cb-button").data(cB).enter()
+            .append("g").attr("class", "cb-button")
+            .on("mousedown",mousedown);// mouseover is defined below.
+
+      // create the buttons
+      buttons.append("rect")
+              .attr("class", "cb-rect")
+              .attr("x", function(d, i) { return 200*i; })
+              .attr("y", 0)
+              .attr("width", 200)
+              .attr("height", 200);
+      // add text to buttons
+      buttons.append("text")
+              .text(function(d) { return d; })
+              .attr("x", function(d, i) { return 200*i + 30; })
+              .attr("y", 0 + 30)
+              .attr("font-size", 20)
+              .attr("fill", "white");
+      var p4selected = false;
+      var p5selected = false;
+      function mousedown(d) {
+        if (d == "p4") p4selected = !p4selected;
+        if (d == "p5") p5selected = !p5selected;
+
+        p4 = p4selected;
+        p5 = p5selected;
+      }
+    }
+    // END CLUSTER BOX
+    /**************************************************************************/
+
+
+    /**************************************************************************/
+    // BEGIN HISTOGRAM
     function histoGram(fD){
         var hG={},    hGDim = {t: 60, r: 0, b: 30, l: 0};
+        var clust_current = "";
         hGDim.w = 1000 - hGDim.l - hGDim.r,
         hGDim.h = 500 - hGDim.t - hGDim.b;
-
         //create svg for histogram.
         var hGsvg = d3.select(id).append("svg")
             .attr("width", hGDim.w + hGDim.l + hGDim.r)
@@ -83,24 +127,24 @@ function dashboard(id, fData){
         hGsvg.append("g").attr("class", "x axis")
             .attr("transform", "translate(13," + (hGDim.h+70)+ ")")
             .call(d3.svg.axis().scale(x).orient("bottom"));
-
         // Create function for y-axis map.
         var y = d3.scale.linear().range([hGDim.h, 0])
                 .domain([0, d3.max(fD, function(d) { return d[1]; })]);
 
         // Create bars for histogram to contain rectangles and freq labels.
-        var bars = hGsvg.selectAll(".bar").data(fD).enter()
-                .append("g").attr("class", "bar");
+        var bars = hGsvg.selectAll("bar-rect").data(fD).enter()
+                .append("g").attr("class", "bar-rect");
 
         //create the rectangles.
         bars.append("rect")
+            .attr("class", "hist-rect")
             .attr("x", function(d) { return x(d[0]); })
             .attr("y", function(d) { return y(d[1]); })
             .attr("width", x.rangeBand())
             .attr("height", function(d) { return hGDim.h - y(d[1]); })
             .attr('fill',barColor)
             .on("mouseover",mouseover)// mouseover is defined below.
-            .on("mouseout",mouseout);// mouseout is defined below.
+            .on("mouseout",mouseout); // mouseout is defined below.
 
         //Create the frequency labels above the rectangles.
         bars.append("text").text(function(d){ return d3.format(",")(d[1])})
@@ -111,9 +155,10 @@ function dashboard(id, fData){
 
         function mouseover(d){  // utility function to be called on mouseover.
             // filter for selected state.
-            var st = fData.filter(function(s){ return s.State == d[0];})[0],
+            var st = fData.filter(function(s){
+                      return s.State == d[0];
+                    })[0],
                 nD = d3.keys(st.freq).map(function(s){ return {type:s, freq:st.freq[s]};});
-
             // call update functions of pie-chart and legend.
             pC.update(nD);
             leg.update(nD);
@@ -126,12 +171,14 @@ function dashboard(id, fData){
         }
 
         // create function to update the bars. This will be used by pie-chart.
-        hG.update = function(nD, color){
+        hG.update = function(newD, color){
+
+            console.log(nD);
             // update the domain of the y-axis map to reflect change in frequencies.
             y.domain([0, d3.max(nD, function(d) { return d[1]; })]);
 
             // Attach the new data to the bars.
-            var bars = hGsvg.selectAll(".bar").data(nD);
+            var bars = hGsvg.selectAll(".bar-rect").data(nD);
 
             // transition the height and color of rectangles.
             bars.select("rect").transition().duration(500)
@@ -144,9 +191,15 @@ function dashboard(id, fData){
                 .text(function(d){ return d3.format(",")(d[1])})
                 .attr("y", function(d) {return y(d[1])-5; });
         }
+
         return hG;
     }
+    // END HISTOGRAM
+    /**************************************************************************/
 
+
+    /**************************************************************************/
+    // BEGIN PIE CHART
     // function to handle pieChart.
     function pieChart(pD){
         var pC ={},    pieDim ={w:250, h: 250};
@@ -178,7 +231,8 @@ function dashboard(id, fData){
         function mouseover(d){
             // call the update function of histogram with new data.
             hG.update(fData.map(function(v){
-                return [v.State,v.freq[d.data.type]];}),segColor(d.data.type));
+                return [v.State,v.freq[d.data.type]];
+            }),segColor(d.data.type));
         }
         //Utility function to be called on mouseout a pie slice.
         function mouseout(d){
@@ -195,8 +249,11 @@ function dashboard(id, fData){
         }
         return pC;
     }
+    // END PIE CHART
+    /**************************************************************************/
 
-    // function to handle legend.
+    /**************************************************************************/
+    // BEGIN LEGEND
     function legend(lD){
         var leg = {};
 
@@ -209,7 +266,7 @@ function dashboard(id, fData){
         // create the first column for each segment.
         tr.append("td").append("svg").attr("width", '16').attr("height", '16').append("rect")
             .attr("width", '16').attr("height", '16')
-			.attr("fill",function(d){ return segColor(d.type); });
+            .attr("fill",function(d){ return segColor(d.type); });
 
         // create the second column for each segment.
         tr.append("td").text(function(d){ return d.type;});
@@ -240,6 +297,8 @@ function dashboard(id, fData){
 
         return leg;
     }
+    // END LEGEND
+    /**************************************************************************/
 
     // calculate total frequency by segment for all state.
     var tF = ['dropped','failed','success'].map(function(d){
@@ -247,11 +306,12 @@ function dashboard(id, fData){
     });
 
     // calculate total frequency by state for all segment.
-    var sF = fData.map(function(d){return [d.State,d.total];});
+    var sF = fData.map(function(d){return [d.State,d.total,d.cluster];});
 
     var hG = histoGram(sF), // create the histogram.
         pC = pieChart(tF), // create the pie-chart.
         leg= legend(tF);  // create the legend.
+        cb = clusterBox(["p4","p5"]);
 
 }
 </script>
@@ -268,9 +328,13 @@ $.get(['data.txt']).then(function(text, status, xhr){
   var freqs = [];
   var i = 0;
   values.forEach(function(val) {
-    if (i != 0) {
+    if (i != 0 && val != "") {
       // gather the things we need
       var name = val[0];
+
+      var cluster_raw = val[1];
+      var slash_index = cluster_raw.indexOf("/");
+      var cluster = cluster_raw.substring(0, slash_index);
       var gen_today = val[3];
       var exec = val[6];
       var succ = val[7];
@@ -298,11 +362,11 @@ $.get(['data.txt']).then(function(text, status, xhr){
           //push to freqs
           if (_low != NaN && _mid != NaN && _high != NaN) {
             if (duplicate) {
-              freqs[dupIndex].freq.droppped += _low;
+              freqs[dupIndex].freq.dropped += _low;
               freqs[dupIndex].freq.failed += _mid;
               freqs[dupIndex].freq.success += _high;
             } else {
-              freqs.push({State: name, freq: {dropped: _low, failed: _mid, success: _high}});
+              freqs.push({State: name, freq: {dropped: _low, failed: _mid, success: _high}, cluster: cluster});
             }
           }
         }
